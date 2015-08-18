@@ -31,9 +31,11 @@ namespace ThreadDistributor
 			_availableThreads = new List<WorkerThread>(threadCount);
 			for (int i=0; i<threadCount; i++) 
 			{
-				_availableThreads[i] = new WorkerThread(workerAction);
-				_availableThreads[i].WorkerException += HandleWorkerException;
-				_availableThreads[i].WorkItemComplete += HandleWorkerItemComplete;
+				WorkerThread wt = new WorkerThread(workerAction);
+				wt.WorkerException += HandleWorkerException;
+				wt.WorkItemComplete += HandleWorkerItemComplete;
+
+				_availableThreads.Add(wt);
 			}
 		}
 
@@ -42,7 +44,7 @@ namespace ThreadDistributor
 		/// </summary>
 		public void StartDistribution()
 		{
-			_timer.Change (TimeSpan.FromSeconds(0), _timerInterval);
+			_timer.Change(TimeSpan.FromSeconds(0), _timerInterval);
 		}
 
 		/// <summary>
@@ -50,7 +52,7 @@ namespace ThreadDistributor
 		/// </summary>
 		public void StopDistribution()
 		{
-			_timer.Change (Timeout.Infinite, Timeout.Infinite);
+			_timer.Dispose();
 			_stopping = true;
 		}
 
@@ -66,21 +68,21 @@ namespace ThreadDistributor
 		private Timer _timer;
 		private List<WorkerThread> _availableThreads;
 		private TimeSpan _timerInterval;
-		private bool _stopping;
-		private AutoResetEvent _dispatchResetEvent = new AutoResetEvent(false);
+		internal bool _stopping;
+		private AutoResetEvent _dispatchResetEvent = new AutoResetEvent(true);
 
 		/// <summary>
 		/// Dispatchs the threads, managing the AutoResetEvent.
 		/// </summary>
 		/// <param name="evt">The AutoResetEvent.</param>
-		private void DispatchThreads(object evt)
+		internal void DispatchThreads(object evt)
 		{
-			((AutoResetEvent)evt).WaitOne();
-
 			if(_stopping)
 			{
 				return;
 			}
+
+			((AutoResetEvent)evt).WaitOne();
 
 			try
 			{
