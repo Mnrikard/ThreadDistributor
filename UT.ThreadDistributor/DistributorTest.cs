@@ -8,7 +8,7 @@ using ThreadDistributor;
 namespace UT.ThreadDistributor
 {
 	[TestFixture()]
-	public class Test
+	public class DistributorTest
 	{
 		private Queue<string> _worklist;
 
