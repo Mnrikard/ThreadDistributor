@@ -25,35 +25,45 @@ namespace ThreadDistributor
 		public Distributor (Func<int, List<object>> getMoreWork, Action<object> workerAction, int threadCount, TimeSpan checkInterval)
 		{
 			GetMoreWork = getMoreWork;
-			_timer = new Timer(DispatchThreads, _dispatchResetEvent, Timeout.Infinite, Timeout.Infinite);
+			_timer = new Timer(WaitToAssignWork, _dispatchResetEvent, Timeout.Infinite, Timeout.Infinite);
 			_timerInterval = checkInterval;
 
 			_availableThreads = new List<WorkerThread>(threadCount);
 			for (int i=0; i<threadCount; i++) 
 			{
 				WorkerThread wt = new WorkerThread(workerAction);
-				wt.WorkerException += HandleWorkerException;
-				wt.WorkItemComplete += HandleWorkerItemComplete;
+				wt.WorkerException += WorkerEncounteredException;
+				wt.WorkItemComplete += ImmediatelyWorkNextItem;
 
 				_availableThreads.Add(wt);
 			}
 		}
-
+		
 		/// <summary>
-		/// Starts the distribution.
+		/// Starts the Distributor.
 		/// </summary>
 		public void StartDistribution()
 		{
+			_stopping = false;
 			_timer.Change(TimeSpan.FromSeconds(0), _timerInterval);
 		}
 
 		/// <summary>
-		/// Stops the distribution.
+		/// Stops the Distributor.
 		/// </summary>
 		public void StopDistribution()
 		{
-			_timer.Dispose();
 			_stopping = true;
+			_timer.Dispose();
+		}
+
+		/// <summary>
+		/// Pauses the Distributor.
+		/// </summary>
+		public void PauseDistribution()
+		{
+			_stopping = true;
+			_timer.Change(Timeout.Infinite, Timeout.Infinite);
 		}
 
 		/// <summary>
@@ -71,55 +81,49 @@ namespace ThreadDistributor
 		internal bool _stopping;
 		private AutoResetEvent _dispatchResetEvent = new AutoResetEvent(true);
 
-		/// <summary>
-		/// Dispatchs the threads, managing the AutoResetEvent.
-		/// </summary>
-		/// <param name="evt">The AutoResetEvent.</param>
-		internal void DispatchThreads(object evt)
+		internal void WaitToAssignWork(object resetEvent)
 		{
 			if(_stopping)
 			{
 				return;
 			}
-
-			((AutoResetEvent)evt).WaitOne();
+			((AutoResetEvent)resetEvent).WaitOne();
 
 			try
 			{
-				DispatchThreads();
+				AssignWorkToAvailableThreads();
 			}
 			catch(Exception ee) 
 			{
-				OnExceptionOccurred (ee);
+				FireExceptionOccurredEvent(ee);
 			}
 			finally 
 			{
-				((AutoResetEvent)evt).Set();
+				((AutoResetEvent)resetEvent).Set();
 			}
 		}
 
-		/// <summary>
-		/// Dispatchs the threads.
-		/// </summary>
-		private void DispatchThreads()
+
+		private void AssignWorkToAvailableThreads()
 		{
-			List<WorkerThread> availableWorkers = _availableThreads.Where (t => !t.Busy).ToList ();
+			List<WorkerThread> availableWorkers = _availableThreads.Where(t => !t.Busy).ToList();
 
-			if (availableWorkers.Any ()) 
+			int i=0;
+			foreach(object workItem in AttemptToGetNWorkItems(availableWorkers.Count))
 			{
-				List<object> workItems = GetMoreWork(availableWorkers.Count);
-
-				if(workItems.Count == 0)
-				{
-					OnWorkItemsCleared();
-				}
-
-				for (int i=0; i<workItems.Count; i++) 
-				{
-					availableWorkers[i].Busy = true;
-					ThreadPool.QueueUserWorkItem(availableWorkers[i].CompleteWork, workItems[i]);
-				}
+				WorkerThread worker = availableWorkers[i++];
+				worker.CompleteWorkItemTask(workItem);
 			}
+		}
+
+		private List<object> AttemptToGetNWorkItems(int amountOfWorkItems)
+		{
+			List<object> workItems = GetMoreWork(amountOfWorkItems);			
+			if(workItems.Count == 0)
+			{
+				FireWorkItemsClearedEvent();
+			}
+			return workItems;
 		}
 
 		/// <summary>
@@ -130,7 +134,7 @@ namespace ThreadDistributor
 		/// <summary>
 		/// Raises the work items cleared event.
 		/// </summary>
-		private void OnWorkItemsCleared()
+		private void FireWorkItemsClearedEvent()
 		{
 			if(WorkItemsCleared != null)
 			{
@@ -143,11 +147,7 @@ namespace ThreadDistributor
 		/// </summary>
 		public event EventHandler<System.UnhandledExceptionEventArgs> ExceptionOccurred;
 
-		/// <summary>
-		/// Raises the exception occurred event.
-		/// </summary>
-		/// <param name="ee">Ee.</param>
-		private void OnExceptionOccurred(Exception ee)
+		private void FireExceptionOccurredEvent(Exception ee)
 		{
 			if(ExceptionOccurred != null)
 			{
@@ -155,27 +155,17 @@ namespace ThreadDistributor
 			}
 		}
 
-		/// <summary>
-		/// Handles the worker exception.
-		/// </summary>
-		/// <param name="sender">The Sender.</param>
-		/// <param name="e">The exception</param>
-		private void HandleWorkerException(object sender, UnhandledExceptionEventArgs e)
+		private void WorkerEncounteredException(object workerThread, UnhandledExceptionEventArgs exceptionArgs)
 		{
 			if(ExceptionOccurred != null)
 			{
-				ExceptionOccurred (sender, e);
+				ExceptionOccurred (workerThread, exceptionArgs);
 			}
 		}
 
-		/// <summary>
-		/// Handles the worker item completing.
-		/// </summary>
-		/// <param name="sender">The Sender.</param>
-		/// <param name="e">Empty</param>
-		private void HandleWorkerItemComplete(object sender, EventArgs e)
+		private void ImmediatelyWorkNextItem(object sender, EventArgs e)
 		{
-			DispatchThreads(_dispatchResetEvent);
+			WaitToAssignWork(_dispatchResetEvent);		
 		}
 
 	}

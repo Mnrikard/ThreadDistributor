@@ -1,11 +1,12 @@
 using System;
+using System.Threading;
 
 namespace ThreadDistributor
 {
 	/// <summary>
 	/// Worker thread.
 	/// </summary>
-	public class WorkerThread
+	internal class WorkerThread
 	{
 		/// <summary>
 		/// Initializes a new instance of the <see cref="ThreadDistributor.WorkerThread"/> class.
@@ -26,6 +27,12 @@ namespace ThreadDistributor
 		/// Gets or sets the worker action which will act upon an object WorkItem returned from <see cref="Distributor.GetMoreWork"/>.
 		/// </summary>
 		public Action<object> WorkerAction { get; set; }
+
+		internal void CompleteWorkItemTask(object workItem)
+		{
+			Busy = true;
+			ThreadPool.QueueUserWorkItem(CompleteWork, workItem);
+		}
 
 		/// <summary>
 		/// Completes the work assigned to it.

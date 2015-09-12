@@ -7,12 +7,12 @@ using ThreadDistributor;
 
 namespace UT.ThreadDistributor
 {
-	[TestFixture()]
+	[TestFixture]
 	public class DistributorTest
 	{
 		private Queue<string> _worklist;
 
-		[SetUp()]
+		[SetUp]
 		public void InitList()
 		{
 			_worklist = new Queue<string>();
@@ -38,19 +38,32 @@ namespace UT.ThreadDistributor
 			return output;
 		}
 
+		private List<object> GetInfiniteWork(int maxItems)
+		{
+			List<object> output = new List<object>();
+			for(int i=0;i<maxItems;i++)
+			{
+				output.Add(i.ToString());
+			}
+
+			return output;
+		}
+
 		private void WorkItem(object o)
 		{
 			Trace.WriteLine(String.Concat("worked item:",o == null ? String.Empty : o.ToString()));
 		}
 
-		[Test()]
+
+
+		[Test]
 		public void CanDistributor ()
 		{
 			Distributor td = new Distributor(GetMoreWork, WorkItem, 2, TimeSpan.FromSeconds(1));
 			Assert.IsInstanceOf<Distributor>(td);
 		}
 
-		[Test()]
+		[Test]
 		public void CanStartDistributor()
 		{
 			Distributor td = new Distributor(GetMoreWork, WorkItem, 2, TimeSpan.FromSeconds(1));
@@ -60,25 +73,43 @@ namespace UT.ThreadDistributor
 			string actual=null;
 			td.GetMoreWork = (a => {actual="z";return new List<object>();});
 			td.StartDistribution();
-			td.DispatchThreads(new AutoResetEvent(true));
+			td.WaitToAssignWork(new AutoResetEvent(true));
 			Assert.AreEqual(expected,actual);
 		}
 
-		[Test()]
+		[Test]
 		public void CanStopDistributor()
 		{
-			Distributor td = new Distributor(GetMoreWork, WorkItem, 2, TimeSpan.FromSeconds(1));
+			DateTime lastWorkDone = DateTime.Now;
+
+			Distributor  td = new Distributor(GetInfiniteWork, (a => {lastWorkDone = DateTime.Now;}), 1, TimeSpan.FromSeconds(1));
+			td.StartDistribution();
 			td.StopDistribution();
+
 			Assert.IsTrue(td._stopping);
 
-			string unexpected = "z";
-			string actual=null;
-			td.GetMoreWork = (a => {actual="z";return new List<object>();});
-			td.DispatchThreads(new AutoResetEvent(true));
-			Assert.AreNotEqual(unexpected,actual);
+			Thread.Sleep(250);
+
+			Assert.Greater(DateTime.Now,lastWorkDone);
 		}
 
-		[Test()]
+		[Test]
+		public void CanPauseDistributor()
+		{
+			DateTime lastWorkDone = DateTime.Now;
+
+			Distributor  td = new Distributor(GetInfiniteWork, (a => {lastWorkDone = DateTime.Now;}), 1, TimeSpan.FromSeconds(1));
+			td.StartDistribution();
+			td.PauseDistribution();
+
+			Assert.IsTrue(td._stopping);
+
+			Thread.Sleep(250);
+			
+			Assert.Greater(DateTime.Now,lastWorkDone);
+		}
+
+		[Test]
 		public void CanItWork()
 		{
 			AutoResetEvent waiter = new AutoResetEvent(false);
@@ -94,7 +125,7 @@ namespace UT.ThreadDistributor
 			Assert.IsEmpty(_worklist);
 		}
 
-		[Test()]
+		[Test]
 		public void CanItStopInTheMiddle()
 		{
 			AutoResetEvent waiter = new AutoResetEvent(false);
@@ -116,7 +147,7 @@ namespace UT.ThreadDistributor
 			Assert.AreEqual(expectedQueuesProcessed,actualQueuesProcessed);
 		}
 
-		[Test()]
+		[Test]
 		public void CanItLogErrorsAndContinue()
 		{
 			AutoResetEvent waiter = new AutoResetEvent(false);
